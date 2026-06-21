@@ -5,6 +5,8 @@ import asyncio
 import logging
 import os
 import time
+import pytz
+from datetime import datetime
 from .vars import Var
 from aiohttp import web
 from pyrogram import idle
@@ -16,15 +18,18 @@ from main.bot.clients import initialize_clients
 
 
 # ============================================================
-# FIX 1: Force timezone to UTC
+# FIX: Force timezone to UTC using pytz
 # ============================================================
 os.environ['TZ'] = 'UTC'
 time.tzset()
 
-# ============================================================
-# FIX 2: Disable Pyrogram time validation via environment
-# ============================================================
-os.environ['PYROGRAM_IGNORE_TIME'] = '1'
+# Set timezone for Python
+try:
+    import pytz
+    utc = pytz.UTC
+    os.environ['PYROGRAM_IGNORE_TIME'] = '1'
+except:
+    pass
 
 
 logging.basicConfig(
@@ -60,20 +65,29 @@ async def start_services():
             await StreamBot.start()
             break
         except RPCError as e:
-            if "msg_id" in str(e) or "time" in str(e):
+            error_msg = str(e).lower()
+            if "msg_id" in error_msg or "time" in error_msg or "sync" in error_msg:
                 print(f"⚠️ Time sync error (attempt {attempt+1}/{max_retries})")
+                print(f"   Error: {e}")
                 print("   ⏳ Waiting and retrying...")
                 await asyncio.sleep(retry_delay)
-                retry_delay += 2
+                retry_delay += 3
                 continue
             else:
                 raise e
+        except ConnectionError as e:
+            print(f"⚠️ Connection error (attempt {attempt+1}/{max_retries})")
+            print("   ⏳ Waiting and retrying...")
+            await asyncio.sleep(retry_delay)
+            retry_delay += 3
+            continue
         except Exception as e:
-            if "ConnectionError" in str(e) or "already terminated" in str(e):
+            error_msg = str(e).lower()
+            if "already terminated" in error_msg or "connection" in error_msg:
                 print(f"⚠️ Connection error (attempt {attempt+1}/{max_retries})")
                 print("   ⏳ Waiting and retrying...")
                 await asyncio.sleep(retry_delay)
-                retry_delay += 2
+                retry_delay += 3
                 continue
             else:
                 raise e
@@ -82,8 +96,9 @@ async def start_services():
         print("   💡 Please check:")
         print("   - BOT_TOKEN is correct")
         print("   - API_ID and API_HASH are correct")
+        print("   - BIN_CHANNEL is correct (starts with -100)")
+        print("   - Bot is admin in BIN_CHANNEL")
         print("   - Internet connection is working")
-        print("   - Timezone is set to UTC")
         return
     
     bot_info = await StreamBot.get_me()
@@ -99,7 +114,7 @@ async def start_services():
         print("------------------ Starting Keep Alive Service ------------------")
         print()
         asyncio.create_task(utils.ping_server())
-    print("--------------------- Initalizing Web Server ---------------------")
+    print("--------------------- Initializing Web Server ---------------------")
     await server.setup()
     bind_address = "0.0.0.0" if Var.ON_HEROKU else Var.BIND_ADDRESS
     await web.TCPSite(server, bind_address, Var.PORT).start()
