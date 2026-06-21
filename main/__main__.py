@@ -16,34 +16,15 @@ from main.bot.clients import initialize_clients
 
 
 # ============================================================
-# FIX: Force timezone to UTC
+# FIX 1: Force timezone to UTC
 # ============================================================
 os.environ['TZ'] = 'UTC'
 time.tzset()
 
 # ============================================================
-# FIX: Monkey patch pyrogram time validation
+# FIX 2: Disable Pyrogram time validation via environment
 # ============================================================
-import pyrogram
-from pyrogram import raw
-
-# Store original function
-_original_invoke = pyrogram.Client.invoke
-
-async def _patched_invoke(self, query, *args, **kwargs):
-    try:
-        return await _original_invoke(self, query, *args, **kwargs)
-    except RPCError as e:
-        if "msg_id" in str(e) or "time" in str(e):
-            # Ignore time errors
-            logging.warning(f"Ignored time error: {e}")
-            # Try to get a fresh session
-            await self.start()
-            return await _original_invoke(self, query, *args, **kwargs)
-        raise e
-
-# Apply patch
-pyrogram.Client.invoke = _patched_invoke
+os.environ['PYROGRAM_IGNORE_TIME'] = '1'
 
 
 logging.basicConfig(
