@@ -16,13 +16,34 @@ from main.bot.clients import initialize_clients
 
 
 # ============================================================
-# FIX: Force timezone to UTC to avoid msg_id errors
+# FIX: Force timezone to UTC
 # ============================================================
 os.environ['TZ'] = 'UTC'
 time.tzset()
 
-# Disable Pyrogram time validation
-os.environ['PYROGRAM_IGNORE_TIME'] = '1'
+# ============================================================
+# FIX: Monkey patch pyrogram time validation
+# ============================================================
+import pyrogram
+from pyrogram import raw
+
+# Store original function
+_original_invoke = pyrogram.Client.invoke
+
+async def _patched_invoke(self, query, *args, **kwargs):
+    try:
+        return await _original_invoke(self, query, *args, **kwargs)
+    except RPCError as e:
+        if "msg_id" in str(e) or "time" in str(e):
+            # Ignore time errors
+            logging.warning(f"Ignored time error: {e}")
+            # Try to get a fresh session
+            await self.start()
+            return await _original_invoke(self, query, *args, **kwargs)
+        raise e
+
+# Apply patch
+pyrogram.Client.invoke = _patched_invoke
 
 
 logging.basicConfig(
@@ -45,16 +66,13 @@ else:
     loop = asyncio.get_event_loop()
 
 
-# ============================================================
-# FIX: Custom start with error handling and time offset
-# ============================================================
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
     
     # Try to start with retry logic
-    max_retries = 3
-    retry_delay = 2
+    max_retries = 5
+    retry_delay = 3
     
     for attempt in range(max_retries):
         try:
@@ -65,7 +83,7 @@ async def start_services():
                 print(f"⚠️ Time sync error (attempt {attempt+1}/{max_retries})")
                 print("   ⏳ Waiting and retrying...")
                 await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
+                retry_delay += 2
                 continue
             else:
                 raise e
@@ -74,12 +92,11 @@ async def start_services():
                 print(f"⚠️ Connection error (attempt {attempt+1}/{max_retries})")
                 print("   ⏳ Waiting and retrying...")
                 await asyncio.sleep(retry_delay)
-                retry_delay *= 2
+                retry_delay += 2
                 continue
             else:
                 raise e
     else:
-        # All retries failed
         print("❌ Failed to start bot after multiple attempts")
         print("   💡 Please check:")
         print("   - BOT_TOKEN is correct")
