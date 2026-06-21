@@ -3,13 +3,26 @@
 import sys
 import asyncio
 import logging
+import os
+import time
 from .vars import Var
 from aiohttp import web
 from pyrogram import idle
+from pyrogram.errors import RPCError
 from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
+
+
+# ============================================================
+# FIX: Force timezone to UTC to avoid msg_id errors
+# ============================================================
+os.environ['TZ'] = 'UTC'
+time.tzset()
+
+# Disable Pyrogram time validation
+os.environ['PYROGRAM_IGNORE_TIME'] = '1'
 
 
 logging.basicConfig(
@@ -31,10 +44,50 @@ if sys.version_info[1] > 9:
 else:
     loop = asyncio.get_event_loop()
 
+
+# ============================================================
+# FIX: Custom start with error handling and time offset
+# ============================================================
 async def start_services():
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
-    await StreamBot.start()
+    
+    # Try to start with retry logic
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            await StreamBot.start()
+            break
+        except RPCError as e:
+            if "msg_id" in str(e) or "time" in str(e):
+                print(f"⚠️ Time sync error (attempt {attempt+1}/{max_retries})")
+                print("   ⏳ Waiting and retrying...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                continue
+            else:
+                raise e
+        except Exception as e:
+            if "ConnectionError" in str(e) or "already terminated" in str(e):
+                print(f"⚠️ Connection error (attempt {attempt+1}/{max_retries})")
+                print("   ⏳ Waiting and retrying...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            else:
+                raise e
+    else:
+        # All retries failed
+        print("❌ Failed to start bot after multiple attempts")
+        print("   💡 Please check:")
+        print("   - BOT_TOKEN is correct")
+        print("   - API_ID and API_HASH are correct")
+        print("   - Internet connection is working")
+        print("   - Timezone is set to UTC")
+        return
+    
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
     print("------------------------------ DONE ------------------------------")
@@ -72,9 +125,17 @@ async def start_services():
     """)
     await idle()
 
+
 async def cleanup():
-    await server.cleanup()
-    await StreamBot.stop()
+    try:
+        await server.cleanup()
+    except Exception:
+        pass
+    try:
+        await StreamBot.stop()
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     try:
@@ -84,6 +145,9 @@ if __name__ == "__main__":
     except Exception as err:
         logging.error(err.with_traceback(None))
     finally:
-        loop.run_until_complete(cleanup())
+        try:
+            loop.run_until_complete(cleanup())
+        except Exception:
+            pass
         loop.stop()
         print("------------------------ Stopped Services ------------------------")
