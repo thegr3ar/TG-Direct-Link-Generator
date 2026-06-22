@@ -18,6 +18,7 @@ import asyncio
 import logging
 import pytz
 import ntplib
+import socket
 from datetime import datetime
 from .vars import Var
 from aiohttp import web
@@ -50,25 +51,27 @@ else:
 
 def sync_time():
     print("---------------------- Syncing System Time ----------------------")
-    try:
-        client = ntplib.NTPClient()
-        response = client.request('pool.ntp.org', version=3)
-        ntp_time = response.tx_time
-        system_time = time.time()
-        offset = ntp_time - system_time
-        print(f"NTP Time: {datetime.fromtimestamp(ntp_time)}")
-        print(f"System Time: {datetime.fromtimestamp(system_time)}")
-        print(f"Offset: {offset} seconds")
-
-        if abs(offset) > 5:
-            print(f"⚠️ System time is off by {offset} seconds. Using offset for Pyrogram.")
-            # Pyrogram 2.x doesn't have a direct 'offset' parameter in Client constructor
-            # that stays persistent for all msg_ids easily without internal monkeypatching,
-            # but setting PYROGRAM_IGNORE_TIME=1 should handle it.
-            # Some versions use self.session.time_offset
+    ntp_servers = ['pool.ntp.org', 'time.google.com', 'time.cloudflare.com']
+    client = ntplib.NTPClient()
+    for server_addr in ntp_servers:
+        try:
+            # Try to resolve and connect using both IPv4 and IPv6 if available,
+            # but force IPv4 if we suspect ai_socktype issues
+            response = client.request(server_addr, version=3, timeout=5)
+            ntp_time = response.tx_time
+            system_time = time.time()
+            offset = ntp_time - system_time
+            print(f"NTP Server: {server_addr}")
+            print(f"NTP Time: {datetime.fromtimestamp(ntp_time)}")
+            print(f"System Time: {datetime.fromtimestamp(system_time)}")
+            print(f"Offset: {offset} seconds")
+            print("------------------------------ DONE ------------------------------")
             return offset
-    except Exception as e:
-        print(f"❌ Failed to sync time: {e}")
+        except Exception as e:
+            print(f"⚠️ Failed to sync with {server_addr}: {e}")
+            continue
+
+    print("❌ Comprehensive NTP sync failure. Proceeding with system time.")
     print("------------------------------ DONE ------------------------------")
     return 0
 
@@ -92,11 +95,10 @@ async def start_services():
                 print(f"⚠️ Time sync error (attempt {attempt+1}/{max_retries})")
                 print(f"   Error: {e}")
 
-                # In Pyrogram v2, we can try to adjust the offset if it's accessible
+                # In Pyrogram v2, adjust the offset
                 try:
                     if hasattr(StreamBot, "session"):
-                        # For newer Pyrogram versions
-                        StreamBot.session.time_offset = int(time_offset)
+                        StreamBot.session.time_offset = int(time_offset) if time_offset != 0 else 0
                 except:
                     pass
 
@@ -113,6 +115,9 @@ async def start_services():
                 await asyncio.sleep(retry_delay)
                 continue
             else:
+                # Catch the filter error here if it still happens despite our sed
+                if "edited" in str(e) and "filters" in str(e):
+                    logging.error("Detected missing 'edited' filter attribute. Please check plugins.")
                 logging.error(f"Unexpected Error during startup: {e}", exc_info=True)
                 raise e
     else:
