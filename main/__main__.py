@@ -1,9 +1,10 @@
+import os
+os.environ["PYROGRAM_IGNORE_TIME"] = "1"
 # This file is a part of TG-Direct-Link-Generator
 
 import sys
 import asyncio
 import logging
-import os
 import time
 import pytz
 from datetime import datetime
@@ -16,21 +17,15 @@ from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
 
-
 # ============================================================
-# FIX: Force timezone to UTC using pytz
+# FIX: Force timezone to UTC
 # ============================================================
 os.environ['TZ'] = 'UTC'
-time.tzset()
-
-# Set timezone for Python
 try:
-    import pytz
-    utc = pytz.UTC
-    os.environ['PYROGRAM_IGNORE_TIME'] = '1'
-except:
+    time.tzset()
+except AttributeError:
+    # time.tzset() is not available on Windows, but this is likely Linux
     pass
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -93,12 +88,6 @@ async def start_services():
                 raise e
     else:
         print("❌ Failed to start bot after multiple attempts")
-        print("   💡 Please check:")
-        print("   - BOT_TOKEN is correct")
-        print("   - API_ID and API_HASH are correct")
-        print("   - BIN_CHANNEL is correct (starts with -100)")
-        print("   - Bot is admin in BIN_CHANNEL")
-        print("   - Internet connection is working")
         return
     
     bot_info = await StreamBot.get_me()
@@ -145,7 +134,8 @@ async def cleanup():
     except Exception:
         pass
     try:
-        await StreamBot.stop()
+        if getattr(StreamBot, "is_connected", False):
+            await StreamBot.stop()
     except Exception:
         pass
 
@@ -156,7 +146,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     except Exception as err:
-        logging.error(err.with_traceback(None))
+        logging.error(err, exc_info=True)
     finally:
         try:
             loop.run_until_complete(cleanup())
