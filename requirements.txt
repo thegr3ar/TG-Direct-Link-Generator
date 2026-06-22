@@ -1,6 +1,7 @@
 aiohttp
-pyrogram==1.4.12
-python-dotenv
+pyrogram
 tgcrypto
 aiofiles
 pytz
+ntplib
+python-dotenv

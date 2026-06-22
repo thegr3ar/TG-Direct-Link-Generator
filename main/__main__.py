@@ -1,31 +1,32 @@
 import os
-os.environ["PYROGRAM_IGNORE_TIME"] = "1"
-# This file is a part of TG-Direct-Link-Generator
-
 import sys
+
+# ============================================================
+# FIX: Environment setup BEFORE any other imports
+# ============================================================
+os.environ["PYROGRAM_IGNORE_TIME"] = "1"
+os.environ['TZ'] = 'Africa/Mogadishu'
+
+import time
+try:
+    time.tzset()
+except AttributeError:
+    pass
+
+# This file is a part of TG-Direct-Link-Generator
 import asyncio
 import logging
-import time
 import pytz
+import ntplib
 from datetime import datetime
 from .vars import Var
 from aiohttp import web
 from pyrogram import idle
-from pyrogram.errors import RPCError
+from pyrogram.errors import RPCError, BadMsgNotification
 from main import utils
 from main import StreamBot
 from main.server import web_server
 from main.bot.clients import initialize_clients
-
-# ============================================================
-# FIX: Force timezone to UTC
-# ============================================================
-os.environ['TZ'] = 'UTC'
-try:
-    time.tzset()
-except AttributeError:
-    # time.tzset() is not available on Windows, but this is likely Linux
-    pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,44 +48,72 @@ else:
     loop = asyncio.get_event_loop()
 
 
+def sync_time():
+    print("---------------------- Syncing System Time ----------------------")
+    try:
+        client = ntplib.NTPClient()
+        response = client.request('pool.ntp.org', version=3)
+        ntp_time = response.tx_time
+        system_time = time.time()
+        offset = ntp_time - system_time
+        print(f"NTP Time: {datetime.fromtimestamp(ntp_time)}")
+        print(f"System Time: {datetime.fromtimestamp(system_time)}")
+        print(f"Offset: {offset} seconds")
+
+        if abs(offset) > 5:
+            print(f"⚠️ System time is off by {offset} seconds. Using offset for Pyrogram.")
+            # Pyrogram 2.x doesn't have a direct 'offset' parameter in Client constructor
+            # that stays persistent for all msg_ids easily without internal monkeypatching,
+            # but setting PYROGRAM_IGNORE_TIME=1 should handle it.
+            # Some versions use self.session.time_offset
+            return offset
+    except Exception as e:
+        print(f"❌ Failed to sync time: {e}")
+    print("------------------------------ DONE ------------------------------")
+    return 0
+
 async def start_services():
+    time_offset = sync_time()
+
     print()
     print("-------------------- Initializing Telegram Bot --------------------")
     
     # Try to start with retry logic
-    max_retries = 5
-    retry_delay = 3
+    max_retries = 10
+    retry_delay = 5
     
     for attempt in range(max_retries):
         try:
             await StreamBot.start()
             break
-        except RPCError as e:
+        except (RPCError, BadMsgNotification) as e:
             error_msg = str(e).lower()
-            if "msg_id" in error_msg or "time" in error_msg or "sync" in error_msg:
+            if "msg_id" in error_msg or "time" in error_msg or "sync" in error_msg or "[16]" in error_msg:
                 print(f"⚠️ Time sync error (attempt {attempt+1}/{max_retries})")
                 print(f"   Error: {e}")
+
+                # In Pyrogram v2, we can try to adjust the offset if it's accessible
+                try:
+                    if hasattr(StreamBot, "session"):
+                        # For newer Pyrogram versions
+                        StreamBot.session.time_offset = int(time_offset)
+                except:
+                    pass
+
                 print("   ⏳ Waiting and retrying...")
                 await asyncio.sleep(retry_delay)
-                retry_delay += 3
                 continue
             else:
+                logging.error(f"Critical RPC Error: {e}")
                 raise e
-        except ConnectionError as e:
-            print(f"⚠️ Connection error (attempt {attempt+1}/{max_retries})")
-            print("   ⏳ Waiting and retrying...")
-            await asyncio.sleep(retry_delay)
-            retry_delay += 3
-            continue
         except Exception as e:
             error_msg = str(e).lower()
             if "already terminated" in error_msg or "connection" in error_msg:
                 print(f"⚠️ Connection error (attempt {attempt+1}/{max_retries})")
-                print("   ⏳ Waiting and retrying...")
                 await asyncio.sleep(retry_delay)
-                retry_delay += 3
                 continue
             else:
+                logging.error(f"Unexpected Error during startup: {e}", exc_info=True)
                 raise e
     else:
         print("❌ Failed to start bot after multiple attempts")
