@@ -47,18 +47,18 @@ async def channel_receive_handler(bot, broadcast: Message):
         return
     try:
         log_msg = await broadcast.forward(chat_id=Var.BIN_CHANNEL)
-        stream_link = "https://{}/{}".format(Var.FQDN, log_msg.message_id) if Var.ON_HEROKU or Var.NO_PORT else \
+        stream_link = "https://{}/{}".format(Var.FQDN, log_msg.id) if Var.ON_HEROKU or Var.NO_PORT else \
             "http://{}:{}/{}".format(Var.FQDN,
                                     Var.PORT,
-                                    log_msg.message_id)
+                                    log_msg.id)
         await log_msg.reply_text(
-            text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.message_id)}",
+            text=f"**Channel Name:** `{broadcast.chat.title}`\n**Channel ID:** `{broadcast.chat.id}`\n**Request URL:** https://t.me/{(await bot.get_me()).username}?start=msgid_{str(log_msg.id)}",
             # text=f"**Cʜᴀɴɴᴇʟ Nᴀᴍᴇ:** `{broadcast.chat.title}`\n**Cʜᴀɴɴᴇʟ ID:** `{broadcast.chat.id}`\n**Rᴇǫᴜᴇsᴛ ᴜʀʟ:** https://t.me/FxStreamBot?start=msgid_{str(log_msg.message_id)}",
             quote=True,            
         )
         await bot.edit_message_reply_markup(
             chat_id=broadcast.chat.id,
-            message_id=broadcast.message_id,
+            message_id=broadcast.id,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("Download Link 📥", url=stream_link)]])
         )
