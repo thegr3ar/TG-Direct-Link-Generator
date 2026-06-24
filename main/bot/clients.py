@@ -4,12 +4,12 @@ import asyncio
 import logging
 from ..vars import Var
 from pyrogram import Client
+from pyrogram.errors import RPCError
 from main.utils import TokenParser
 from . import multi_clients, work_loads, StreamBot
 
 
 async def initialize_clients():
-    SESSION_STRING_SIZE = 351
     multi_clients[0] = StreamBot
     work_loads[0] = 0
     all_tokens = TokenParser().parse_from_env()
@@ -20,31 +20,51 @@ async def initialize_clients():
     async def start_client(client_id, token):
         try:
             if len(token) >= 351:
-                session_name=token
+                name=token
                 bot_token=None
                 print(f"Starting - Client {client_id} using Session Strings")
             else:
-                session_name=":memory:"
+                name=f"client_{client_id}"
                 bot_token=token
                 print(f"Starting - Client {client_id} using Bot Token")
             if client_id == len(all_tokens):
                 await asyncio.sleep(2)
                 print("This will take some time, please wait...")
-            client = await Client(
-                session_name=session_name,
+
+            client = Client(
+                name=name,
                 api_id=Var.API_ID,
                 api_hash=Var.API_HASH,
                 bot_token=bot_token,
                 sleep_threshold=Var.SLEEP_THRESHOLD,
                 no_updates=True,
-            ).start()
+                in_memory=True if len(token) < 351 else False
+            )
+
+            # Retry logic for additional clients
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await client.start()
+                    break
+                except RPCError as e:
+                    if "msg_id" in str(e).lower() and attempt < max_retries - 1:
+                        await asyncio.sleep(2)
+                        continue
+                    raise e
+
             work_loads[client_id] = 0
             return client_id, client
         except Exception:
             logging.error(f"Failed starting Client - {client_id} Error:", exc_info=True)
+            return None
     
-    clients = await asyncio.gather(*[start_client(i, token) for i, token in all_tokens.items()])
-    multi_clients.update(dict(clients))
+    results = await asyncio.gather(*[start_client(i, token) for i, token in all_tokens.items()])
+    for res in results:
+        if res:
+            cid, cl = res
+            multi_clients[cid] = cl
+
     if len(multi_clients) != 1:
         Var.MULTI_CLIENT = True
         print("Multi-Client Mode Enabled")
