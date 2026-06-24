@@ -20,23 +20,25 @@ async def initialize_clients():
     async def start_client(client_id, token):
         try:
             if len(token) >= 351:
-                session_name=token
+                session_string=token
                 bot_token=None
                 print(f"Starting - Client {client_id} using Session Strings")
             else:
-                session_name=":memory:"
+                session_string=None
                 bot_token=token
                 print(f"Starting - Client {client_id} using Bot Token")
             if client_id == len(all_tokens):
                 await asyncio.sleep(2)
                 print("This will take some time, please wait...")
             client = await Client(
-                session_name=session_name,
+                name=str(client_id),
                 api_id=Var.API_ID,
                 api_hash=Var.API_HASH,
+                session_string=session_string,
                 bot_token=bot_token,
                 sleep_threshold=Var.SLEEP_THRESHOLD,
                 no_updates=True,
+                in_memory=True,
             ).start()
             work_loads[client_id] = 0
             return client_id, client
