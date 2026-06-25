@@ -28,17 +28,37 @@ class Var(object):
         APP_NAME = str(environ.get("APP_NAME"))
     else:
         ON_HEROKU = False
-    FQDN = (
-        str(environ.get("FQDN", BIND_ADDRESS))
-        if not ON_HEROKU or environ.get("FQDN")
-        else APP_NAME + ".herokuapp.com"
-    )
+    
+    # ============================================================
+    # FIX: Correct FQDN and URL generation
+    # ============================================================
+    # Get FQDN from environment, fallback to BIND_ADDRESS
+    FQDN = str(environ.get("FQDN", BIND_ADDRESS))
+    
+    # If FQDN is 0.0.0.0, use a better fallback
+    if FQDN == "0.0.0.0":
+        # Try to get from environment or use a default
+        FQDN = str(environ.get("FQDN", "localhost"))
+    
+    # Build URL based on settings
     if ON_HEROKU:
         URL = f"https://{FQDN}/"
     else:
-        URL = "http{}://{}{}/".format(
-            "s" if HAS_SSL else "", FQDN, "" if NO_PORT else ":" + str(PORT)
-        )
+        # Use HTTPS if HAS_SSL is True, otherwise HTTP
+        protocol = "https" if HAS_SSL else "http"
+        # Add port only if NO_PORT is False and NOT using SSL on port 443
+        port = "" if NO_PORT or (HAS_SSL and PORT == 443) else f":{PORT}"
+        URL = f"{protocol}://{FQDN}{port}/"
+    
+    # ============================================================
+    # LOGGING FOR DEBUGGING
+    # ============================================================
+    print(f"📍 FQDN: {FQDN}")
+    print(f"📍 URL: {URL}")
+    print(f"📍 HAS_SSL: {HAS_SSL}")
+    print(f"📍 NO_PORT: {NO_PORT}")
+    print(f"📍 PORT: {PORT}")
+    print(f"📍 ON_HEROKU: {ON_HEROKU}")
 
     UPDATES_CHANNEL = "TechZBots"
     OWNER_ID = int(environ.get('OWNER_ID', '777000'))
