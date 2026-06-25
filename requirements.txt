@@ -8,3 +8,5 @@ python-dotenv
 motor
 dnspython
 telethon
+emoji
+requests

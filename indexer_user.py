@@ -7,11 +7,11 @@ import base64
 import struct
 from datetime import datetime, timezone
 from urllib.parse import quote_plus
-from telethon import TelegramClient, errors
+from telethon import TelegramClient, errors, utils
 from telethon.tl.types import MessageMediaDocument, DocumentAttributeFilename, MessageMediaPhoto
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger("UserIndexer")
 
 # Add current directory to path
@@ -33,17 +33,26 @@ def get_file_name(message):
     return (message.message or "").split('\n')[0].strip()
 
 def get_pyrogram_hash(message):
-    """Attempt to generate a Pyrogram-compatible file hash for documents."""
-    if message.media and isinstance(message.media, MessageMediaDocument):
-        try:
-            doc_id = message.media.document.id
-            # Pyrogram file_unique_id for document: type=0, version=4
-            # Struct: <iiq -> int, int, long long (little-endian)
-            data = struct.pack("<iiq", 0, 4, doc_id)
+    """
+    Attempt to generate a Pyrogram-compatible file hash.
+    In Pyrogram, for documents, file_unique_id is base64url(packed(type_id, version, id)).
+    Type 0 is document, version is 4.
+    """
+    try:
+        if message.media:
+            if isinstance(message.media, MessageMediaDocument):
+                file_id = message.media.document.id
+                data = struct.pack("<iiq", 0, 4, file_id)
+            elif isinstance(message.media, MessageMediaPhoto):
+                file_id = message.media.photo.id
+                data = struct.pack("<iiq", 2, 4, file_id)
+            else:
+                return ""
+
             digest = base64.urlsafe_b64encode(data).decode().rstrip("=")
             return digest[:6]
-        except Exception:
-            pass
+    except Exception:
+        pass
     return ""
 
 async def main():
@@ -117,7 +126,6 @@ async def main():
             try:
                 meta = await tmdb.fetch(parsed.title, parsed.year, parsed.is_tv_show)
             except Exception as e:
-                logger.error(f"TMDB error for {parsed.title}: {e}")
                 counters["error"] += 1
                 return
 
@@ -173,8 +181,7 @@ async def main():
                 continue
             try:
                 await process_msg(msg)
-                # Update checkpoint every 10 messages
-                if counters["total"] % 10 == 0:
+                if counters["total"] % 50 == 0:
                     state = {"offset_id": msg.id}
                     state.update(counters)
                     await db.save_checkpoint(bin_channel, state)
@@ -182,14 +189,15 @@ async def main():
                 print(f"⏳ Flood wait: {e.seconds}s")
                 await asyncio.sleep(e.seconds)
             except Exception as e:
-                logger.error(f"Error processing message {msg.id}: {e}")
                 counters["error"] += 1
 
-        # Clear checkpoint on success
         await db.clear_checkpoint(bin_channel)
 
     except KeyboardInterrupt:
         print("\n🛑 Stopped by user. Saving checkpoint...")
+        state = {"offset_id": offset_id} # This is not perfect but better than nothing
+        state.update(counters)
+        await db.save_checkpoint(bin_channel, state)
     except Exception as e:
         logger.exception(f"Fatal error during indexing: {e}")
     finally:
@@ -205,4 +213,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n🛑 Stopped by user.")
+        pass

@@ -1,3 +1,6 @@
+from __future__ import annotations
+import emoji
+
 # This file is a part of TG-Direct-Link-Generator
 """Robust title/year/TV extraction from inconsistent Telegram file names.
 
@@ -5,8 +8,6 @@ Channel files use many naming styles (plain, emoji-laden, country flags, dotted
 release names, TV episode markers). This module normalises them into a clean
 title plus structured metadata that can be searched against TMDB.
 """
-
-from __future__ import annotations
 
 import re
 from dataclasses import dataclass
@@ -116,7 +117,7 @@ class ExtractResult:
 
 
 def remove_emojis(text: str) -> str:
-    return EMOJI_PATTERN.sub(" ", text)
+    return emoji.replace_emoji(text, replace=" ")
 
 
 def _strip_extension(text: str) -> str:
