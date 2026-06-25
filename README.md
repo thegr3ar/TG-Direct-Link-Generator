@@ -139,6 +139,20 @@ you may also add as many as bots you want. (max limit is not tested yet)
 
 `PING_INTERVAL` : The time in ms you want the servers to be pinged each time to avoid sleeping (Only for Heroku). Defaults to `1200` or 20 minutes.
 
+### Media Indexer Vars (TMDB + MongoDB)
+
+These enable the `/index`, `/search` and `/stats` commands. The indexer is optional — the bot still generates stream links without them.
+
+`TMDB_API_KEY` : API key (v3) from [themoviedb.org](https://www.themoviedb.org/settings/api). Required for indexing.
+
+`MONGODB_URI` : MongoDB connection string, e.g. a MongoDB Atlas (free tier) URI `mongodb+srv://user:pass@cluster.mongodb.net/`. Required for indexing.
+
+`DATABASE_NAME` : MongoDB database name. Defaults to `movies_db`.
+
+`INDEX_CONCURRENCY` : Max concurrent TMDB lookups while indexing. Defaults to `10`.
+
+`INDEX_PROGRESS_EVERY` : How often (in files scanned) to refresh the live progress message. Defaults to `25`.
+
 
 
 ## How to use the bot
@@ -148,6 +162,18 @@ you may also add as many as bots you want. (max limit is not tested yet)
 `/start` : To check if the bot is alive or not.
 
 To get an instant stream link, just forward any media to the bot and boom, its fast af.
+
+### Media indexer commands
+
+The indexer scans `BIN_CHANNEL`, extracts a clean title from each file name, enriches it with TMDB metadata (poster, rating, cast, director, genres, season/episode for TV) and stores it in MongoDB with categories.
+
+`/index` : *(owner only)* Scan the entire `BIN_CHANNEL` for video/document files and index them. Shows live progress, skips duplicates (by `message_id`, `tmdb_id` or `file_name`), detects TV shows, and **checkpoints progress** so it resumes where it stopped if interrupted — just run `/index` again.
+
+`/cancelindex` : *(owner only)* Stop a running index job after the current batch (progress is checkpointed).
+
+`/stats` : *(owner only)* Show counts of movies, TV shows, categories and the database size.
+
+`/search <title>` : Search the indexed database by title and get watch links.
 
 ## FAQ
 

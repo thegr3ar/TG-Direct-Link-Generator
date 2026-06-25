@@ -43,5 +43,14 @@ class Var(object):
     UPDATES_CHANNEL = "TechZBots"
     OWNER_ID = int(environ.get('OWNER_ID', '777000'))
 
+    # --- Media indexer (TMDB + MongoDB) ---
+    TMDB_API_KEY = str(environ.get("TMDB_API_KEY", ""))
+    MONGODB_URI = str(environ.get("MONGODB_URI", ""))
+    DATABASE_NAME = str(environ.get("DATABASE_NAME", "movies_db"))
+    # Max concurrent TMDB lookups while indexing.
+    INDEX_CONCURRENCY = int(environ.get("INDEX_CONCURRENCY", "10"))
+    # How often (in processed files) to refresh the live progress message.
+    INDEX_PROGRESS_EVERY = int(environ.get("INDEX_PROGRESS_EVERY", "25"))
+
     BANNED_CHANNELS = list(set(int(x) for x in str(environ.get("BANNED_CHANNELS", "-1001296894100")).split()))
     BANNED_USERS = list(set(int(x) for x in str(environ.get("BANNED_USERS","5275470552 5287015877")).split()))

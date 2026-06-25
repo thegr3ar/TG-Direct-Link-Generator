@@ -36,6 +36,26 @@
         },        
         "OWNER_ID": {
             "description": "Your Telegram User ID"
+        },
+        "TMDB_API_KEY": {
+            "description": "TMDB API key (v3) for the media indexer. Read the readme.",
+            "required": false
+        },
+        "MONGODB_URI": {
+            "description": "MongoDB connection string for the media indexer. Read the readme.",
+            "required": false
+        },
+        "DATABASE_NAME": {
+            "description": "MongoDB database name. Defaults to movies_db.",
+            "required": false
+        },
+        "INDEX_CONCURRENCY": {
+            "description": "Max concurrent TMDB lookups while indexing. Defaults to 10.",
+            "required": false
+        },
+        "INDEX_PROGRESS_EVERY": {
+            "description": "How often (files scanned) to refresh progress. Defaults to 25.",
+            "required": false
         }
     },
     "buildpacks": [{
