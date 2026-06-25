@@ -11,7 +11,7 @@ from telethon import TelegramClient, errors
 from telethon.tl.types import MessageMediaDocument, DocumentAttributeFilename, MessageMediaPhoto
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', stream=sys.stdout)
 logger = logging.getLogger("UserIndexer")
 
 # Add current directory to path
@@ -62,7 +62,7 @@ async def main():
         return
 
     me = await client.get_me()
-    print(f"✅ Logged in as {me.first_name}.")
+    print(f"✅ Logged in as user.")
 
     db = Database(Var.MONGODB_URI, Var.DATABASE_NAME)
     await db.ensure_indexes()
@@ -80,12 +80,25 @@ async def main():
         print(f"❌ Could not find channel {bin_channel}: {e}")
         return
 
-    counters = {"total": 0, "new": 0, "dup": 0, "invalid": 0, "notfound": 0, "error": 0}
+    # Checkpoint logic
+    checkpoint = await db.get_checkpoint(bin_channel)
+    offset_id = int(checkpoint.get("offset_id", 0) or 0)
+
+    counters = {
+        "total": int(checkpoint.get("total", 0) or 0),
+        "new": int(checkpoint.get("new", 0) or 0),
+        "dup": int(checkpoint.get("dup", 0) or 0),
+        "invalid": int(checkpoint.get("invalid", 0) or 0),
+        "notfound": int(checkpoint.get("notfound", 0) or 0),
+        "error": int(checkpoint.get("error", 0) or 0)
+    }
+
+    if offset_id:
+        print(f"⏩ Resuming from message {offset_id}...")
+
     sem = asyncio.Semaphore(Var.INDEX_CONCURRENCY)
 
     async def process_msg(msg):
-        counters["total"] += 1
-
         file_name = get_file_name(msg)
         if not file_name:
             return
@@ -153,27 +166,40 @@ async def main():
         counters["new"] += 1
         print(f"📝 Processing: {doc['title']} ({doc['year']})")
 
-    print(f"🔎 Scanning channel: {getattr(entity, 'title', bin_channel)}")
+    try:
+        async for msg in client.iter_messages(entity, offset_id=offset_id, reverse=True, limit=None):
+            counters["total"] += 1
+            if not msg.media:
+                continue
+            try:
+                await process_msg(msg)
+                # Update checkpoint every 10 messages
+                if counters["total"] % 10 == 0:
+                    state = {"offset_id": msg.id}
+                    state.update(counters)
+                    await db.save_checkpoint(bin_channel, state)
+            except errors.FloodWaitError as e:
+                print(f"⏳ Flood wait: {e.seconds}s")
+                await asyncio.sleep(e.seconds)
+            except Exception as e:
+                logger.error(f"Error processing message {msg.id}: {e}")
+                counters["error"] += 1
 
-    async for msg in client.iter_messages(entity, limit=10000):
-        if not msg.media:
-            continue
-        try:
-            await process_msg(msg)
-        except errors.FloodWaitError as e:
-            print(f"⏳ Flood wait: {e.seconds}s")
-            await asyncio.sleep(e.seconds)
-        except Exception as e:
-            logger.error(f"Error processing message {msg.id}: {e}")
-            counters["error"] += 1
+        # Clear checkpoint on success
+        await db.clear_checkpoint(bin_channel)
 
-    await tmdb.close()
-    db.close()
-    print("\n✅ Indexing Complete!")
-    print(f"📁 Total: {counters['total']}")
-    print(f"🆕 New: {counters['new']}")
-    print(f"⏭ Duplicates: {counters['dup']}")
-    print(f"🚫 Invalid: {counters['invalid']}")
+    except KeyboardInterrupt:
+        print("\n🛑 Stopped by user. Saving checkpoint...")
+    except Exception as e:
+        logger.exception(f"Fatal error during indexing: {e}")
+    finally:
+        await tmdb.close()
+        db.close()
+        print("\n✅ Indexing Complete!")
+        print(f"📁 Total: {counters['total']}")
+        print(f"🆕 New: {counters['new']}")
+        print(f"⏭ Duplicates: {counters['dup']}")
+        print(f"🚫 Invalid: {counters['invalid']}")
 
 if __name__ == "__main__":
     try:
