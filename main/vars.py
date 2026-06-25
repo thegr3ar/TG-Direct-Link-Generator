@@ -54,3 +54,4 @@ class Var(object):
 
     BANNED_CHANNELS = list(set(int(x) for x in str(environ.get("BANNED_CHANNELS", "-1001296894100")).split()))
     BANNED_USERS = list(set(int(x) for x in str(environ.get("BANNED_USERS","5275470552 5287015877")).split()))
+    PHONE_NUMBER = str(environ.get("PHONE_NUMBER", ""))
